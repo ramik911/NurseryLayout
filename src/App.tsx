@@ -3,6 +3,8 @@ import { useState, useEffect, useMemo } from 'react';
 // --- CONFIGURATION ---
 const SHEETDB_API_URL = 'https://sheetdb.io/api/v1/h468f58mnljzr'; 
 const MOM_CATEGORIES = ['Veg', 'New', 'Full', 'Old'];
+const DEFAULT_RUNOFF_PH = '5';
+const DEFAULT_RUNOFF_EC = '3.0';
 
 type MomCategory = (typeof MOM_CATEGORIES)[number];
 
@@ -21,6 +23,10 @@ type Zone = {
   entries: Entry[];
   notes: string;
   plantedDate: string;
+  runoffPh: string;
+  runoffEc: string;
+  runoffMeasuredAt: string;
+  runoffNotes: string;
 };
 
 type Zones = Record<string, Zone>;
@@ -30,6 +36,11 @@ type LayoutBlock = {
   id: string;
   rows: string[];
   getCols: (level: string) => Array<number | null>;
+};
+
+type HighlightTarget = {
+  strain: string;
+  kind: 'veg' | 'mom';
 };
 
 const emptyEntries = (): Entry[] => [
@@ -61,7 +72,11 @@ const formatSheetRow = (zoneData: Zone): SheetRow => ({
   isMom3: zoneData.entries[2].isMom ? 'TRUE' : 'FALSE',
   momCategory3: zoneData.entries[2].momCategory || 'Veg',
   notes: zoneData.notes || '',
-  plantedDate: zoneData.plantedDate || ''
+  plantedDate: zoneData.plantedDate || '',
+  runoffPh: zoneData.runoffPh || '',
+  runoffEc: zoneData.runoffEc || '',
+  runoffMeasuredAt: zoneData.runoffMeasuredAt || '',
+  runoffNotes: zoneData.runoffNotes || ''
 });
 
 const toQueryString = (data: SheetRow) => (
@@ -69,6 +84,36 @@ const toQueryString = (data: SheetRow) => (
     .map(key => `${encodeURIComponent(key)}=${encodeURIComponent(data[key])}`)
     .join('&')
 );
+
+const toDateInputValue = (value: string) => {
+  if (!value) return '';
+  return value.split('T')[0];
+};
+
+const getTodayInputValue = () => {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, '0');
+  const day = String(today.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const clampRunoffValue = (value: string) => {
+  if (value === '') return '';
+  const numericValue = Number(value);
+  if (Number.isNaN(numericValue)) return '';
+  return String(Math.min(10, Math.max(0, numericValue)));
+};
+
+const zoneMatchesHighlight = (zone: Zone, highlight: HighlightTarget | null) => {
+  if (!highlight) return false;
+  const normalizedStrain = highlight.strain.trim().toLowerCase();
+  return zone.entries.some(entry => {
+    const matchesStrain = entry.strain.trim().toLowerCase() === normalizedStrain;
+    if (!matchesStrain || entry.count <= 0) return false;
+    return highlight.kind === 'mom' ? entry.isMom : !entry.isMom;
+  });
+};
 
 // Define the exact layout from the provided image
 const layoutBlocks: LayoutBlock[] = [
@@ -99,7 +144,8 @@ export default function App() {
           initialZones[id] = {
             id, level, slot, metrc: '',
             entries: emptyEntries(),
-            notes: '', plantedDate: ''
+            notes: '', plantedDate: '',
+            runoffPh: '', runoffEc: '', runoffMeasuredAt: '', runoffNotes: ''
           };
         }
       });
@@ -111,6 +157,7 @@ export default function App() {
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState<Zone | null>(null);
   const [showBulkClearConfirm, setShowBulkClearConfirm] = useState(false);
+  const [highlightTarget, setHighlightTarget] = useState<HighlightTarget | null>(null);
   
   const [syncStatus, setSyncStatus] = useState(SHEETDB_API_URL ? 'loading' : 'offline_demo');
 
@@ -179,7 +226,11 @@ export default function App() {
                   }
                 ],
                 notes: String(row.notes || ''),
-                plantedDate: String(row.plantedDate || '')
+                plantedDate: String(row.plantedDate || ''),
+                runoffPh: String(row.runoffPh || ''),
+                runoffEc: String(row.runoffEc || ''),
+                runoffMeasuredAt: String(row.runoffMeasuredAt || ''),
+                runoffNotes: String(row.runoffNotes || '')
               };
             }
           });
@@ -221,7 +272,8 @@ export default function App() {
         const clearedZone = {
           ...zone, metrc: '',
           entries: emptyEntries(),
-          notes: '', plantedDate: ''
+          notes: '', plantedDate: '',
+          runoffPh: '', runoffEc: '', runoffMeasuredAt: '', runoffNotes: ''
         };
         updatedZones[id] = clearedZone;
         itemsToUpdate.push(clearedZone);
@@ -239,6 +291,12 @@ export default function App() {
     setSelectedZone(zones[zoneId]);
     setFormData(zones[zoneId]);
     setIsEditing(false);
+  };
+
+  const handleHighlightClick = (target: HighlightTarget) => {
+    setHighlightTarget(prev => (
+      prev && prev.kind === target.kind && prev.strain === target.strain ? null : target
+    ));
   };
 
   const handleSave = () => {
@@ -266,13 +324,48 @@ export default function App() {
     setFormData({ ...formData, entries: newEntries });
   };
 
+  const handleZoneFieldChange = (field: keyof Zone, value: string) => {
+    if (!formData) return;
+    setFormData({ ...formData, [field]: value });
+  };
+
+  const handleRunoffNumberChange = (field: 'runoffPh' | 'runoffEc', value: string) => {
+    if (!formData) return;
+    const nextValue = clampRunoffValue(value);
+    const nextFormData = {
+      ...formData,
+      [field]: nextValue
+    };
+    if (field === 'runoffEc' && nextValue && !formData.runoffMeasuredAt) {
+      nextFormData.runoffMeasuredAt = getTodayInputValue();
+    }
+    setFormData(nextFormData);
+  };
+
+  const ensureRunoffDefaults = () => {
+    if (!formData) return;
+    setFormData({
+      ...formData,
+      runoffPh: formData.runoffPh || DEFAULT_RUNOFF_PH,
+      runoffEc: formData.runoffEc || DEFAULT_RUNOFF_EC
+    });
+  };
+
+  const openDatePicker = (target: HTMLInputElement) => {
+    if (typeof target.showPicker === 'function') {
+      target.showPicker();
+    }
+  };
+
   const isSaving = syncStatus === 'saving';
+  const syncLabel = syncStatus === 'loading' || syncStatus === 'saving' ? '...' : syncStatus === 'error' ? '!' : 'OK';
+  const syncClass = syncStatus === 'error' ? 'bg-red-950/70 text-red-300 border-red-800' : 'bg-gray-900 border-gray-800';
 
   return (
-    <div className="min-h-screen bg-black text-gray-100 font-sans p-1 sm:p-4 flex flex-col md:flex-row gap-2">
+    <div className="min-h-screen bg-black text-gray-100 font-sans p-1 sm:p-4 flex flex-col gap-2">
       
-      {/* Left Column: The Map */}
-      <div className="flex-1 max-w-5xl">
+      {/* Map */}
+      <div className="w-full">
         <header className="mb-2 sm:mb-6 flex flex-col gap-2">
           <div className="flex items-center justify-between px-1">
             <h1 className="text-lg sm:text-2xl font-bold text-green-400 flex items-center gap-2">
@@ -285,27 +378,37 @@ export default function App() {
               >
                 Clear A/B
               </button>
-              <div className="px-2 py-1 bg-gray-900 rounded-md border border-gray-800 text-[10px]">
-                {syncStatus === 'loading' || syncStatus === 'saving' ? '🔄' : '☁️'}
+              <div className={`px-2 py-1 rounded-md border text-[10px] font-bold ${syncClass}`}>
+                {syncLabel}
               </div>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-1.5">
+          <div className="grid grid-cols-2 gap-1.5">
             {/* Detailed Total Veg Box */}
-            <div className="bg-green-950/20 border border-green-800/30 p-2 rounded-lg flex flex-col">
-              <div className="flex justify-between items-baseline mb-1">
-                <p className="text-[8px] font-bold text-green-500 uppercase tracking-tighter">Total Veg</p>
+            <div className="bg-green-950/20 border border-green-800/30 p-2 rounded-lg flex flex-col min-w-0">
+              <div className="flex items-baseline gap-1 mb-1">
                 <p className="text-xl font-black text-green-400 leading-none">{stats.totalVeg}</p>
+                <p className="text-[8px] font-bold text-green-500 uppercase tracking-tighter">- Total Veg</p>
               </div>
-              <div className="flex flex-wrap gap-1 mt-auto">
+              <div className="flex flex-col gap-0.5 mt-auto">
                 {Object.keys(stats.vegCounts).length > 0 ? (
-                  Object.entries(stats.vegCounts).map(([strain, count]) => (
-                    <div key={strain} className="flex items-center gap-1 bg-green-900/30 px-1.5 py-0.5 rounded border border-green-500/20 max-w-full">
-                      <span className="text-[9px] font-bold text-green-100 truncate">{strain}</span>
-                      <span className="text-[9px] font-black text-green-400 shrink-0">{count}</span>
-                    </div>
-                  ))
+                  Object.entries(stats.vegCounts).sort(([a], [b]) => a.localeCompare(b)).map(([strain, count]) => {
+                    const active = highlightTarget?.kind === 'veg' && highlightTarget.strain === strain;
+
+                    return (
+                    <button
+                      key={strain}
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() => handleHighlightClick({ strain, kind: 'veg' })}
+                      className={`grid grid-cols-[1fr_auto] items-center gap-1 px-1.5 py-0.5 rounded border max-w-full text-left transition-colors ${active ? 'bg-yellow-300 text-black border-yellow-200' : 'bg-green-900/30 border-green-500/20'}`}
+                    >
+                      <span className={`text-[9px] font-bold truncate ${active ? 'text-black' : 'text-green-100'}`}>{strain}</span>
+                      <span className={`text-[9px] font-black shrink-0 ${active ? 'text-black' : 'text-green-400'}`}>{count}</span>
+                    </button>
+                    );
+                  })
                 ) : (
                   <span className="text-[8px] text-gray-600 italic">None logged</span>
                 )}
@@ -313,20 +416,27 @@ export default function App() {
             </div>
 
             {/* Detailed Mothers Box */}
-            <div className="col-span-1 md:col-span-2 bg-purple-950/20 border border-purple-800/30 p-2 rounded-lg flex flex-col">
+            <div className="bg-purple-950/20 border border-purple-800/30 p-2 rounded-lg flex flex-col min-w-0">
               <p className="text-[8px] font-bold text-purple-400 uppercase tracking-tighter mb-1.5">Mothers Detail (Veg/New/Full/Old)</p>
-              <div className="flex flex-wrap gap-1.5">
+              <div className="flex flex-col gap-0.5">
                 {Object.keys(stats.motherStats).length > 0 ? (
-                  Object.entries(stats.motherStats).map(([strain, categories]) => {
-                    const breakdown = Object.entries(categories)
-                      .map(([cat, count]) => `${count}${cat.charAt(0).toLowerCase()}`)
-                      .join(' ');
+                  Object.entries(stats.motherStats).sort(([a], [b]) => a.localeCompare(b)).map(([strain, categories]) => {
+                    const breakdown = MOM_CATEGORIES
+                      .filter(cat => categories[cat])
+                      .map(cat => `${categories[cat]}-${cat}`)
+                      .join('/');
                     
                     return (
-                      <div key={strain} className="flex items-center gap-1.5 bg-purple-900/30 px-2 py-0.5 rounded border border-purple-500/20 max-w-full">
-                        <span className="text-[9px] font-bold text-purple-100 truncate">{strain}</span>
-                        <span className="text-[9px] font-black text-purple-400 shrink-0">{breakdown}</span>
-                      </div>
+                      <button
+                        key={strain}
+                        type="button"
+                        aria-pressed={highlightTarget?.kind === 'mom' && highlightTarget.strain === strain}
+                        onClick={() => handleHighlightClick({ strain, kind: 'mom' })}
+                        className={`grid grid-cols-[1fr_auto] items-center gap-1.5 px-1.5 py-0.5 rounded border max-w-full text-left transition-colors ${highlightTarget?.kind === 'mom' && highlightTarget.strain === strain ? 'bg-yellow-300 text-black border-yellow-200' : 'bg-purple-900/30 border-purple-500/20'}`}
+                      >
+                        <span className={`text-[9px] font-bold truncate ${highlightTarget?.kind === 'mom' && highlightTarget.strain === strain ? 'text-black' : 'text-purple-100'}`}>{strain}</span>
+                        <span className={`text-[9px] font-black shrink-0 ${highlightTarget?.kind === 'mom' && highlightTarget.strain === strain ? 'text-black' : 'text-purple-400'}`}>{breakdown}</span>
+                      </button>
                     );
                   })
                 ) : (
@@ -352,6 +462,8 @@ export default function App() {
                       const empty = isSlotEmpty(zone);
                       const hasMoms = zone.entries.some(e => e.isMom && e.count > 0);
                       const isMixed = hasMoms && zone.entries.some(e => !e.isMom && e.count > 0);
+                      const hasRunoff = Boolean(zone.runoffPh || zone.runoffEc);
+                      const isHighlighted = zoneMatchesHighlight(zone, highlightTarget);
                       
                       let bg = empty ? 'bg-gray-900 border-gray-800 text-gray-500' : 'bg-green-950 border-green-700 text-green-100';
                       if (!empty && hasMoms) bg = isMixed ? 'bg-gradient-to-br from-green-950 to-purple-950 border-purple-800' : 'bg-purple-950 border-purple-800 text-purple-100';
@@ -361,15 +473,28 @@ export default function App() {
                           key={zoneId}
                           onClick={() => handleZoneClick(zoneId)}
                           className={`relative flex flex-col items-start p-0.5 min-h-[38px] sm:min-h-[90px] rounded-[2px] border transition-all text-left
-                            ${bg} ${isSelected ? 'ring-1 ring-white z-10 scale-[1.03]' : ''}
+                            ${bg} ${isSelected ? 'ring-1 ring-white z-10 scale-[1.03]' : ''} ${isHighlighted ? 'ring-2 ring-yellow-300 border-yellow-300 shadow-[0_0_0_1px_rgba(253,224,71,0.85)] z-20' : ''}
                           `}
                         >
                           <div className="flex justify-between items-start w-full leading-none">
                             <span className="font-bold text-[9px] sm:text-xl">{slot}</span>
-                            {!empty && hasMoms && <div className="w-1 h-1 rounded-full bg-purple-500"></div>}
+                            <div className="flex items-center gap-0.5">
+                              {hasRunoff && <div className="w-1 h-1 rounded-full bg-yellow-300"></div>}
+                              {!empty && hasMoms && <div className="w-1 h-1 rounded-full bg-purple-500"></div>}
+                            </div>
                           </div>
                           
                           <div className="mt-auto w-full space-y-[1px]">
+                            {hasRunoff && (
+                              <div className="flex justify-between items-center text-[6px] sm:text-[9px] w-full bg-yellow-300 px-0.5 rounded-[1px] overflow-hidden leading-tight text-black">
+                                <span className="truncate pr-0.5">RO</span>
+                                <span className="font-black">
+                                  {zone.runoffEc && `${zone.runoffEc}ec`}
+                                  {zone.runoffEc && zone.runoffPh && ' '}
+                                  {zone.runoffPh && `pH ${zone.runoffPh}`}
+                                </span>
+                              </div>
+                            )}
                             {!empty ? zone.entries.map((entry, i) => (
                               (entry.strain || entry.count > 0) && (
                                 <div key={i} className={`flex justify-between items-center text-[6px] sm:text-[10px] w-full bg-black/40 px-0.5 rounded-[1px] overflow-hidden leading-tight ${entry.isMom ? 'text-purple-300' : ''}`}>
@@ -402,9 +527,9 @@ export default function App() {
         </div>
       </div>
 
-      {/* Right Column: Detail Panel */}
-      <div className="w-full md:w-80 flex-shrink-0">
-        <div className="bg-gray-900 rounded-lg border border-gray-800 shadow-xl overflow-hidden flex flex-col h-[calc(100vh-10rem)] md:h-[calc(100vh-2rem)] max-h-[800px]">
+      {/* Detail Panel */}
+      <div className="w-full flex-shrink-0">
+        <div className="bg-gray-900 rounded-lg border border-gray-800 shadow-xl overflow-hidden flex flex-col min-h-[260px]">
           {selectedZone ? (
             <>
               <div className="bg-gray-800 p-3 border-b border-gray-700 flex justify-between items-center">
@@ -443,20 +568,122 @@ export default function App() {
                         )}
                       </div>
                     ))}
+                    <div className="p-2 bg-cyan-950/20 border border-cyan-800/50 rounded-md space-y-2">
+                      <div className="flex justify-between items-center">
+                        <span className="text-[10px] font-bold text-cyan-300 uppercase">Runoff</span>
+                        <span className="text-[9px] text-gray-500">Latest reading</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <label className="block">
+                          <span className="block text-[8px] font-bold text-cyan-300 uppercase mb-0.5">EC</span>
+                          <input
+                            type="number"
+                            inputMode="decimal"
+                            min="0"
+                            max="10"
+                            step="0.1"
+                            value={formData.runoffEc || DEFAULT_RUNOFF_EC}
+                            onFocus={ensureRunoffDefaults}
+                            onChange={(e) => handleRunoffNumberChange('runoffEc', e.target.value)}
+                            placeholder="EC"
+                            className="w-full bg-gray-900 p-1.5 rounded border border-cyan-800/60 text-xs text-cyan-100"
+                          />
+                        </label>
+                        <label className="block">
+                          <span className="block text-[8px] font-bold text-cyan-300 uppercase mb-0.5">pH</span>
+                          <input
+                            type="number"
+                            inputMode="decimal"
+                            min="0"
+                            max="10"
+                            step="0.1"
+                            value={formData.runoffPh || DEFAULT_RUNOFF_PH}
+                            onFocus={ensureRunoffDefaults}
+                            onChange={(e) => handleRunoffNumberChange('runoffPh', e.target.value)}
+                            placeholder="pH"
+                            className="w-full bg-gray-900 p-1.5 rounded border border-cyan-800/60 text-xs text-cyan-100"
+                          />
+                        </label>
+                      </div>
+                      <label className="block">
+                        <span className="block text-[8px] font-bold text-cyan-300 uppercase mb-0.5">Date</span>
+                        <input
+                          type="date"
+                          value={toDateInputValue(formData.runoffMeasuredAt)}
+                          onClick={(e) => {
+                            ensureRunoffDefaults();
+                            openDatePicker(e.currentTarget);
+                          }}
+                          onFocus={(e) => {
+                            ensureRunoffDefaults();
+                            openDatePicker(e.currentTarget);
+                          }}
+                          onChange={(e) => handleZoneFieldChange('runoffMeasuredAt', e.target.value)}
+                          className="w-full bg-gray-900 p-1.5 rounded border border-cyan-800/60 text-xs text-cyan-100"
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="block text-[8px] font-bold text-cyan-300 uppercase mb-0.5">Notes/Strain Sampled</span>
+                        <input
+                          type="text"
+                          value={formData.runoffNotes}
+                          onFocus={ensureRunoffDefaults}
+                          onChange={(e) => handleZoneFieldChange('runoffNotes', e.target.value)}
+                          placeholder="Runoff notes"
+                          className="w-full bg-gray-900 p-1.5 rounded border border-cyan-800/60 text-xs text-cyan-100"
+                        />
+                      </label>
+                    </div>
                     <button onClick={handleSave} disabled={isSaving} className="w-full py-2 bg-green-600 rounded-md font-bold text-sm shadow-lg active:scale-95 transition-transform">Save Details</button>
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {selectedZone.entries.map((e, i) => (e.strain || e.count > 0) && (
-                      <div key={i} className={`flex justify-between items-center p-2 rounded border ${e.isMom ? 'bg-purple-950/40 border-purple-800' : 'bg-gray-950 border-gray-800'}`}>
-                        <div>
-                          <p className={`text-xs font-bold ${e.isMom ? 'text-purple-100' : 'text-white'}`}>{e.strain || 'Unknown'}</p>
-                          {e.isMom && <p className="text-[9px] font-bold text-purple-400 uppercase">Mother • {e.momCategory || 'Veg'}</p>}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      {selectedZone.entries.map((e, i) => (
+                        <div key={i} className={`p-2 rounded border ${e.isMom ? 'bg-purple-950/40 border-purple-800' : e.strain || e.count > 0 ? 'bg-gray-950 border-gray-800' : 'bg-black/40 border-gray-800/70'}`}>
+                          <div className="flex justify-between items-center mb-1">
+                            <p className="text-[10px] text-gray-500 uppercase font-bold">Entry {i + 1}</p>
+                            <span className={`text-[9px] font-bold uppercase ${e.isMom ? 'text-purple-300' : 'text-green-400'}`}>
+                              {e.isMom ? 'Mother' : 'Veg'}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-[1fr_auto] items-end gap-2">
+                            <div className="min-w-0">
+                              <p className={`text-sm font-bold truncate ${e.isMom ? 'text-purple-100' : e.strain ? 'text-white' : 'text-gray-600'}`}>
+                                {e.strain || 'Empty'}
+                              </p>
+                              <p className="text-[9px] font-bold text-gray-500 uppercase">
+                                {e.isMom ? e.momCategory || 'Veg' : 'Plant count'}
+                              </p>
+                            </div>
+                            <span className={`text-lg font-black ${e.isMom ? 'text-purple-300' : e.count > 0 ? 'text-green-400' : 'text-gray-600'}`}>
+                              {e.count}
+                            </span>
+                          </div>
                         </div>
-                        <span className={`text-lg font-black ${e.isMom ? 'text-purple-300' : 'text-green-400'}`}>{e.count}</span>
+                      ))}
+                    </div>
+                    <div className="p-2 rounded border bg-cyan-950/20 border-cyan-800/50">
+                      <div className="flex justify-between items-baseline mb-1">
+                        <p className="text-[10px] text-cyan-300 uppercase font-bold">Runoff</p>
+                        <p className="text-[9px] text-gray-500">{selectedZone.runoffMeasuredAt || 'No date'}</p>
                       </div>
-                    ))}
-                    <div className="pt-4 border-t border-gray-800 grid grid-cols-1 gap-3">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        <div>
+                          <p className="text-[9px] text-gray-500 uppercase font-bold">EC</p>
+                          <p className="text-base font-black text-cyan-100">{selectedZone.runoffEc || '-'}</p>
+                        </div>
+                        <div>
+                          <p className="text-[9px] text-gray-500 uppercase font-bold">pH</p>
+                          <p className="text-base font-black text-cyan-100">{selectedZone.runoffPh || '-'}</p>
+                        </div>
+                        <div className="col-span-2">
+                          <p className="text-[9px] text-gray-500 uppercase font-bold">Notes/Strain Sampled</p>
+                          <p className="text-xs text-cyan-100/80 break-words">{selectedZone.runoffNotes || 'None'}</p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="pt-3 border-t border-gray-800 grid grid-cols-1 sm:grid-cols-3 gap-3">
                       <div>
                         <p className="text-[10px] text-gray-500 uppercase font-bold">METRC Tag</p>
                         <p className="text-xs font-mono break-all text-blue-300">{selectedZone.metrc || 'None'}</p>
@@ -464,6 +691,10 @@ export default function App() {
                       <div>
                         <p className="text-[10px] text-gray-500 uppercase font-bold">Planted Date</p>
                         <p className="text-xs text-gray-300">{selectedZone.plantedDate || 'N/A'}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-gray-500 uppercase font-bold">Box Notes</p>
+                        <p className="text-xs text-gray-300 break-words">{selectedZone.notes || 'None'}</p>
                       </div>
                     </div>
                   </div>
