@@ -325,29 +325,36 @@ export default function App() {
   };
 
   const handleZoneFieldChange = (field: keyof Zone, value: string) => {
-    if (!formData) return;
-    setFormData({ ...formData, [field]: value });
+    setFormData(prev => {
+      if (!prev) return prev;
+      return { ...prev, [field]: value };
+    });
   };
 
   const handleRunoffNumberChange = (field: 'runoffPh' | 'runoffEc', value: string) => {
-    if (!formData) return;
     const nextValue = clampRunoffValue(value);
-    const nextFormData = {
-      ...formData,
-      [field]: nextValue
-    };
-    if (field === 'runoffEc' && nextValue && !formData.runoffMeasuredAt) {
-      nextFormData.runoffMeasuredAt = getTodayInputValue();
-    }
-    setFormData(nextFormData);
+    setFormData(prev => {
+      if (!prev) return prev;
+      const nextFormData = {
+        ...prev,
+        [field]: nextValue
+      };
+      if (field === 'runoffEc' && nextValue && !prev.runoffMeasuredAt) {
+        nextFormData.runoffMeasuredAt = getTodayInputValue();
+      }
+      return nextFormData;
+    });
   };
 
   const ensureRunoffDefaults = () => {
-    if (!formData) return;
-    setFormData({
-      ...formData,
-      runoffPh: formData.runoffPh || DEFAULT_RUNOFF_PH,
-      runoffEc: formData.runoffEc || DEFAULT_RUNOFF_EC
+    setFormData(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        runoffPh: prev.runoffPh || DEFAULT_RUNOFF_PH,
+        runoffEc: prev.runoffEc || DEFAULT_RUNOFF_EC,
+        runoffMeasuredAt: prev.runoffMeasuredAt || getTodayInputValue()
+      };
     });
   };
 
