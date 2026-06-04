@@ -1,17 +1,77 @@
-// @ts-nocheck
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 
 // --- CONFIGURATION ---
 const SHEETDB_API_URL = 'https://sheetdb.io/api/v1/h468f58mnljzr'; 
 const MOM_CATEGORIES = ['Veg', 'New', 'Full', 'Old'];
 
-const isSlotEmpty = (zone) => {
-  if (!zone?.entries) return true;
+type MomCategory = (typeof MOM_CATEGORIES)[number];
+
+type Entry = {
+  strain: string;
+  count: number;
+  isMom: boolean;
+  momCategory: MomCategory;
+};
+
+type Zone = {
+  id: string;
+  level: string;
+  slot: number | string;
+  metrc: string;
+  entries: Entry[];
+  notes: string;
+  plantedDate: string;
+};
+
+type Zones = Record<string, Zone>;
+type SheetRow = Record<string, string>;
+
+type LayoutBlock = {
+  id: string;
+  rows: string[];
+  getCols: (level: string) => Array<number | null>;
+};
+
+const emptyEntries = (): Entry[] => [
+  { strain: '', count: 0, isMom: false, momCategory: 'Veg' },
+  { strain: '', count: 0, isMom: false, momCategory: 'Veg' },
+  { strain: '', count: 0, isMom: false, momCategory: 'Veg' }
+];
+
+const isSlotEmpty = (zone: Zone) => {
+  if (!zone || !zone.entries) return true;
   return zone.entries.every(e => !e.strain && e.count === 0);
 };
 
+const formatSheetRow = (zoneData: Zone): SheetRow => ({
+  id: zoneData.id,
+  level: zoneData.level,
+  slot: String(zoneData.slot),
+  metrc: zoneData.metrc || '',
+  strain1: zoneData.entries[0].strain || '',
+  count1: String(zoneData.entries[0].count || 0),
+  isMom1: zoneData.entries[0].isMom ? 'TRUE' : 'FALSE',
+  momCategory1: zoneData.entries[0].momCategory || 'Veg',
+  strain2: zoneData.entries[1].strain || '',
+  count2: String(zoneData.entries[1].count || 0),
+  isMom2: zoneData.entries[1].isMom ? 'TRUE' : 'FALSE',
+  momCategory2: zoneData.entries[1].momCategory || 'Veg',
+  strain3: zoneData.entries[2].strain || '',
+  count3: String(zoneData.entries[2].count || 0),
+  isMom3: zoneData.entries[2].isMom ? 'TRUE' : 'FALSE',
+  momCategory3: zoneData.entries[2].momCategory || 'Veg',
+  notes: zoneData.notes || '',
+  plantedDate: zoneData.plantedDate || ''
+});
+
+const toQueryString = (data: SheetRow) => (
+  Object.keys(data)
+    .map(key => `${encodeURIComponent(key)}=${encodeURIComponent(data[key])}`)
+    .join('&')
+);
+
 // Define the exact layout from the provided image
-const layoutBlocks = [
+const layoutBlocks: LayoutBlock[] = [
   {
     id: 'top-block',
     rows: ['C', 'B', 'A'],
@@ -30,7 +90,7 @@ const layoutBlocks = [
 ];
 
 export default function App() {
-  const initialZones = {};
+  const initialZones: Zones = {};
   layoutBlocks.forEach(block => {
     block.rows.forEach(level => {
       block.getCols(level).forEach(slot => {
@@ -38,11 +98,7 @@ export default function App() {
           const id = `${level}-${slot}`;
           initialZones[id] = {
             id, level, slot, metrc: '',
-            entries: [
-              { strain: '', count: 0, isMom: false, momCategory: 'Veg' },
-              { strain: '', count: 0, isMom: false, momCategory: 'Veg' },
-              { strain: '', count: 0, isMom: false, momCategory: 'Veg' }
-            ],
+            entries: emptyEntries(),
             notes: '', plantedDate: ''
           };
         }
@@ -51,22 +107,21 @@ export default function App() {
   });
 
   const [zones, setZones] = useState(initialZones);
-  const [selectedZone, setSelectedZone] = useState(null);
+  const [selectedZone, setSelectedZone] = useState<Zone | null>(null);
   const [isEditing, setIsEditing] = useState(false);
-  const [formData, setFormData] = useState({});
-  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [formData, setFormData] = useState<Zone | null>(null);
   const [showBulkClearConfirm, setShowBulkClearConfirm] = useState(false);
   
   const [syncStatus, setSyncStatus] = useState(SHEETDB_API_URL ? 'loading' : 'offline_demo');
 
   const stats = useMemo(() => {
     let totalVeg = 0;
-    const vegCounts = {};
-    const motherStats = {};
+    const vegCounts: Record<string, number> = {};
+    const motherStats: Record<string, Record<string, number>> = {};
 
     Object.values(zones).forEach(zone => {
       zone.entries.forEach(entry => {
-        const count = parseInt(entry.count) || 0;
+        const count = entry.count || 0;
         if (count > 0) {
           const name = (entry.strain || 'Unnamed').trim() || 'Unnamed';
           if (entry.isMom) {
@@ -94,71 +149,63 @@ export default function App() {
         const data = await response.json();
         
         if (Array.isArray(data) && data.length > 0) {
-          const loadedZones = {};
-          data.forEach(row => {
+          const loadedZones: Zones = {};
+          data.forEach((row: Record<string, string | boolean>) => {
             if (row.id) {
-              loadedZones[row.id] = {
-                id: row.id,
-                level: row.level,
-                slot: parseInt(row.slot) || row.slot,
-                metrc: row.metrc || '',
+              const id = String(row.id);
+              loadedZones[id] = {
+                id,
+                level: String(row.level || ''),
+                slot: parseInt(String(row.slot), 10) || String(row.slot || ''),
+                metrc: String(row.metrc || ''),
                 entries: [
                   { 
-                    strain: row.strain1 || '', 
-                    count: Math.min(99, Math.max(0, parseInt(row.count1) || 0)),
+                    strain: String(row.strain1 || ''), 
+                    count: Math.min(99, Math.max(0, parseInt(String(row.count1), 10) || 0)),
                     isMom: row.isMom1 === 'TRUE' || row.isMom1 === true,
-                    momCategory: row.momCategory1 || 'Veg'
+                    momCategory: String(row.momCategory1 || 'Veg')
                   },
                   { 
-                    strain: row.strain2 || '', 
-                    count: Math.min(99, Math.max(0, parseInt(row.count2) || 0)),
+                    strain: String(row.strain2 || ''), 
+                    count: Math.min(99, Math.max(0, parseInt(String(row.count2), 10) || 0)),
                     isMom: row.isMom2 === 'TRUE' || row.isMom2 === true,
-                    momCategory: row.momCategory2 || 'Veg'
+                    momCategory: String(row.momCategory2 || 'Veg')
                   },
                   { 
-                    strain: row.strain3 || '', 
-                    count: Math.min(99, Math.max(0, parseInt(row.count3) || 0)),
+                    strain: String(row.strain3 || ''), 
+                    count: Math.min(99, Math.max(0, parseInt(String(row.count3), 10) || 0)),
                     isMom: row.isMom3 === 'TRUE' || row.isMom3 === true,
-                    momCategory: row.momCategory3 || 'Veg'
+                    momCategory: String(row.momCategory3 || 'Veg')
                   }
                 ],
-                notes: row.notes || '',
-                plantedDate: row.plantedDate || ''
+                notes: String(row.notes || ''),
+                plantedDate: String(row.plantedDate || '')
               };
             }
           });
           setZones(prev => ({ ...prev, ...loadedZones }));
           setSyncStatus('success');
         }
-      } catch (error) {
+      } catch {
         setSyncStatus('error');
       }
     };
     fetchSheetData();
   }, []);
 
-  const saveZoneToSheetDB = async (zoneData) => {
+  const saveZoneToSheetDB = async (zoneData: Zone) => {
     if (!SHEETDB_API_URL) return;
     setSyncStatus('saving');
     try {
-      const formattedData = {
-        id: zoneData.id, level: zoneData.level, slot: zoneData.slot, metrc: zoneData.metrc,
-        strain1: zoneData.entries[0].strain, count1: zoneData.entries[0].count,
-        isMom1: zoneData.entries[0].isMom, momCategory1: zoneData.entries[0].momCategory,
-        strain2: zoneData.entries[1].strain, count2: zoneData.entries[1].count,
-        isMom2: zoneData.entries[1].isMom, momCategory2: zoneData.entries[1].momCategory,
-        strain3: zoneData.entries[2].strain, count3: zoneData.entries[2].count,
-        isMom3: zoneData.entries[2].isMom, momCategory3: zoneData.entries[2].momCategory,
-        notes: zoneData.notes, plantedDate: zoneData.plantedDate
-      };
       const baseUrl = SHEETDB_API_URL.replace(/\/$/, '');
-      await fetch(`${baseUrl}/id/${zoneData.id}`, {
-        method: 'PUT',
-        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
-        body: JSON.stringify({ data: [formattedData] })
+      const formattedData = formatSheetRow(zoneData);
+      const response = await fetch(`${baseUrl}/id/${encodeURIComponent(zoneData.id)}?${toQueryString(formattedData)}`, {
+        method: 'PATCH',
+        headers: { 'Accept': 'application/json' }
       });
+      if (!response.ok) throw new Error(`SheetDB save failed: ${response.status}`);
       setSyncStatus('success');
-    } catch (error) {
+    } catch {
       setSyncStatus('error');
     }
   };
@@ -167,17 +214,13 @@ export default function App() {
     setSyncStatus('saving');
     setShowBulkClearConfirm(false);
     const updatedZones = { ...zones };
-    const itemsToUpdate = [];
+    const itemsToUpdate: Zone[] = [];
     Object.keys(updatedZones).forEach(id => {
       const zone = updatedZones[id];
       if (zone.level === 'A' || zone.level === 'B') {
         const clearedZone = {
           ...zone, metrc: '',
-          entries: [
-            { strain: '', count: 0, isMom: false, momCategory: 'Veg' },
-            { strain: '', count: 0, isMom: false, momCategory: 'Veg' },
-            { strain: '', count: 0, isMom: false, momCategory: 'Veg' }
-          ],
+          entries: emptyEntries(),
           notes: '', plantedDate: ''
         };
         updatedZones[id] = clearedZone;
@@ -192,23 +235,34 @@ export default function App() {
     }
   };
 
-  const handleZoneClick = (zoneId) => {
+  const handleZoneClick = (zoneId: string) => {
     setSelectedZone(zones[zoneId]);
     setFormData(zones[zoneId]);
     setIsEditing(false);
   };
 
   const handleSave = () => {
+    if (!formData) return;
     setZones(prev => ({ ...prev, [formData.id]: formData }));
     setSelectedZone(formData);
     setIsEditing(false);
     saveZoneToSheetDB(formData);
   };
 
-  const handleEntryChange = (index, field, value) => {
+  const handleEntryChange = (index: number, field: keyof Entry, value: string | boolean) => {
+    if (!formData) return;
     const newEntries = [...formData.entries];
-    if (field === 'count') value = Math.min(99, Math.max(0, parseInt(value) || 0));
-    newEntries[index] = { ...newEntries[index], [field]: value };
+    const nextEntry = { ...newEntries[index] };
+    if (field === 'count') {
+      nextEntry.count = Math.min(99, Math.max(0, parseInt(String(value), 10) || 0));
+    } else if (field === 'isMom') {
+      nextEntry.isMom = Boolean(value);
+    } else if (field === 'momCategory') {
+      nextEntry.momCategory = String(value);
+    } else {
+      nextEntry.strain = String(value);
+    }
+    newEntries[index] = nextEntry;
     setFormData({ ...formData, entries: newEntries });
   };
 
@@ -323,7 +377,7 @@ export default function App() {
                                     {entry.strain || 'Unk'}
                                     {entry.isMom && (
                                       <span className="opacity-80 ml-0.5 font-bold uppercase">
-                                        -{entry.momCategory?.charAt(0).toLowerCase() || 'v'}
+                                        -{entry.momCategory ? entry.momCategory.charAt(0).toLowerCase() : 'v'}
                                       </span>
                                     )}
                                   </span>
@@ -358,7 +412,7 @@ export default function App() {
                 <button onClick={() => setIsEditing(!isEditing)} className="px-3 py-1 bg-gray-700 rounded-md text-xs">{isEditing ? 'Cancel' : 'Edit'}</button>
               </div>
               <div className="p-3 overflow-y-auto flex-1 space-y-4">
-                {isEditing ? (
+                {isEditing && formData ? (
                   <div className="space-y-4 pb-20">
                     {formData.entries.map((entry, index) => (
                       <div key={index} className="p-2 bg-black border border-gray-800 rounded-md space-y-2">
