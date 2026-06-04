@@ -411,14 +411,14 @@ export default function App() {
                     return (
                     <button
                       key={strain}
-                      type="button"
-                      aria-pressed={active}
-                      onClick={() => handleHighlightClick({ strain, kind: 'veg' })}
-                      className={`grid grid-cols-[1fr_auto] items-center gap-1 px-1.5 py-0.5 rounded border max-w-full text-left transition-colors ${active ? 'bg-yellow-300 text-black border-yellow-200' : 'bg-green-900/30 border-green-500/20'}`}
-                    >
-                      <span className={`text-[9px] font-bold truncate ${active ? 'text-black' : 'text-green-100'}`}>{strain}</span>
-                      <span className={`text-[9px] font-black shrink-0 ${active ? 'text-black' : 'text-green-400'}`}>{count}</span>
-                    </button>
+	                      type="button"
+	                      aria-pressed={active}
+	                      onClick={() => handleHighlightClick({ strain, kind: 'veg' })}
+	                      className={`flex items-center w-full gap-1 px-1.5 py-0.5 rounded border max-w-full text-left transition-colors ${active ? 'bg-yellow-300 text-black border-yellow-200' : 'bg-green-900/30 border-green-500/20'}`}
+	                    >
+	                      <span className={`min-w-0 flex-1 text-[9px] font-bold truncate ${active ? 'text-black' : 'text-green-100'}`}>{strain}</span>
+	                      <span className={`ml-auto text-right text-[9px] font-black shrink-0 ${active ? 'text-black' : 'text-green-400'}`}>{count}</span>
+	                    </button>
                     );
                   })
                 ) : (
@@ -441,14 +441,14 @@ export default function App() {
                     return (
                       <button
                         key={strain}
-                        type="button"
-                        aria-pressed={highlightTarget?.kind === 'mom' && highlightTarget.strain === strain}
-                        onClick={() => handleHighlightClick({ strain, kind: 'mom' })}
-                        className={`grid grid-cols-[1fr_auto] items-center gap-1.5 px-1.5 py-0.5 rounded border max-w-full text-left transition-colors ${highlightTarget?.kind === 'mom' && highlightTarget.strain === strain ? 'bg-yellow-300 text-black border-yellow-200' : 'bg-purple-900/30 border-purple-500/20'}`}
-                      >
-                        <span className={`text-[9px] font-bold truncate ${highlightTarget?.kind === 'mom' && highlightTarget.strain === strain ? 'text-black' : 'text-purple-100'}`}>{strain}</span>
-                        <span className={`text-[9px] font-black shrink-0 ${highlightTarget?.kind === 'mom' && highlightTarget.strain === strain ? 'text-black' : 'text-purple-400'}`}>{breakdown}</span>
-                      </button>
+	                        type="button"
+	                        aria-pressed={highlightTarget?.kind === 'mom' && highlightTarget.strain === strain}
+	                        onClick={() => handleHighlightClick({ strain, kind: 'mom' })}
+	                        className={`flex items-center w-full gap-1.5 px-1.5 py-0.5 rounded border max-w-full text-left transition-colors ${highlightTarget?.kind === 'mom' && highlightTarget.strain === strain ? 'bg-yellow-300 text-black border-yellow-200' : 'bg-purple-900/30 border-purple-500/20'}`}
+	                      >
+	                        <span className={`min-w-0 flex-1 text-[9px] font-bold truncate ${highlightTarget?.kind === 'mom' && highlightTarget.strain === strain ? 'text-black' : 'text-purple-100'}`}>{strain}</span>
+	                        <span className={`ml-auto text-right text-[9px] font-black shrink-0 ${highlightTarget?.kind === 'mom' && highlightTarget.strain === strain ? 'text-black' : 'text-purple-400'}`}>{breakdown}</span>
+	                      </button>
                     );
                   })
                 ) : (
