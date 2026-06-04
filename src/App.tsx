@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useRef, useState, useEffect, useMemo } from 'react';
 
 // --- CONFIGURATION ---
 const SHEETDB_API_URL = 'https://sheetdb.io/api/v1/h468f58mnljzr'; 
@@ -158,6 +158,7 @@ export default function App() {
   const [formData, setFormData] = useState<Zone | null>(null);
   const [showBulkClearConfirm, setShowBulkClearConfirm] = useState(false);
   const [highlightTarget, setHighlightTarget] = useState<HighlightTarget | null>(null);
+  const detailPanelRef = useRef<HTMLDivElement | null>(null);
   
   const [syncStatus, setSyncStatus] = useState(SHEETDB_API_URL ? 'loading' : 'offline_demo');
 
@@ -291,6 +292,10 @@ export default function App() {
     setSelectedZone(zones[zoneId]);
     setFormData(zones[zoneId]);
     setIsEditing(false);
+    window.setTimeout(() => {
+      detailPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      detailPanelRef.current?.focus({ preventScroll: true });
+    }, 0);
   };
 
   const handleHighlightClick = (target: HighlightTarget) => {
@@ -536,7 +541,11 @@ export default function App() {
 
       {/* Detail Panel */}
       <div className="w-full flex-shrink-0">
-        <div className="bg-gray-900 rounded-lg border border-gray-800 shadow-xl overflow-hidden flex flex-col min-h-[260px]">
+        <div
+          ref={detailPanelRef}
+          tabIndex={-1}
+          className="bg-gray-900 rounded-lg border border-gray-800 shadow-xl overflow-hidden flex flex-col min-h-[260px] outline-none focus:ring-2 focus:ring-green-400/60"
+        >
           {selectedZone ? (
             <>
               <div className="bg-gray-800 p-3 border-b border-gray-700 flex justify-between items-center">
