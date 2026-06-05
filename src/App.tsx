@@ -487,7 +487,7 @@ export default function App() {
 	                          `}
 	                        >
 	                          <div className="flex justify-between items-start w-full leading-none">
-	                            <span className="font-bold text-[8px] sm:text-base opacity-80">{slot}</span>
+	                            <span className="inline-flex items-center rounded-[2px] border border-white/20 bg-black/40 px-1 py-0.5 font-black text-[8px] sm:text-[11px] leading-none text-white/90">{zoneId}</span>
 	                            <div className="flex items-center gap-0.5">
 	                              {hasRunoff && <div className="w-1 h-1 rounded-full bg-yellow-300"></div>}
 	                              {!empty && hasMoms && <div className="w-1 h-1 rounded-full bg-purple-500"></div>}
