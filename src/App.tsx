@@ -2,9 +2,13 @@ import { useRef, useState, useEffect, useMemo } from 'react';
 
 // --- CONFIGURATION ---
 const SHEETDB_API_URL = 'https://sheetdb.io/api/v1/h468f58mnljzr'; 
-const MOM_CATEGORIES = ['Veg', 'New', 'Full', 'Old'];
-const DEFAULT_RUNOFF_PH = '5';
-const DEFAULT_RUNOFF_EC = '3.0';
+const MOM_CATEGORIES = ['Future Mom', 'New Mom', 'Full Mom', 'Old Mom'] as const;
+const MOM_CATEGORY_LEGACY_LABELS: Record<string, MomCategory> = {
+  Veg: 'Future Mom',
+  New: 'New Mom',
+  Full: 'Full Mom',
+  Old: 'Old Mom'
+};
 
 type MomCategory = (typeof MOM_CATEGORIES)[number];
 
@@ -44,10 +48,16 @@ type HighlightTarget = {
 };
 
 const emptyEntries = (): Entry[] => [
-  { strain: '', count: 0, isMom: false, momCategory: 'Veg' },
-  { strain: '', count: 0, isMom: false, momCategory: 'Veg' },
-  { strain: '', count: 0, isMom: false, momCategory: 'Veg' }
+  { strain: '', count: 0, isMom: false, momCategory: 'Future Mom' },
+  { strain: '', count: 0, isMom: false, momCategory: 'Future Mom' },
+  { strain: '', count: 0, isMom: false, momCategory: 'Future Mom' }
 ];
+
+const normalizeMomCategory = (value: string | boolean | undefined): MomCategory => {
+  const category = String(value || '').trim();
+  if (MOM_CATEGORIES.includes(category as MomCategory)) return category as MomCategory;
+  return MOM_CATEGORY_LEGACY_LABELS[category] || 'Future Mom';
+};
 
 const isSlotEmpty = (zone: Zone) => {
   if (!zone || !zone.entries) return true;
@@ -62,15 +72,15 @@ const formatSheetRow = (zoneData: Zone): SheetRow => ({
   strain1: zoneData.entries[0].strain || '',
   count1: String(zoneData.entries[0].count || 0),
   isMom1: zoneData.entries[0].isMom ? 'TRUE' : 'FALSE',
-  momCategory1: zoneData.entries[0].momCategory || 'Veg',
+  momCategory1: zoneData.entries[0].momCategory || 'Future Mom',
   strain2: zoneData.entries[1].strain || '',
   count2: String(zoneData.entries[1].count || 0),
   isMom2: zoneData.entries[1].isMom ? 'TRUE' : 'FALSE',
-  momCategory2: zoneData.entries[1].momCategory || 'Veg',
+  momCategory2: zoneData.entries[1].momCategory || 'Future Mom',
   strain3: zoneData.entries[2].strain || '',
   count3: String(zoneData.entries[2].count || 0),
   isMom3: zoneData.entries[2].isMom ? 'TRUE' : 'FALSE',
-  momCategory3: zoneData.entries[2].momCategory || 'Veg',
+  momCategory3: zoneData.entries[2].momCategory || 'Future Mom',
   notes: zoneData.notes || '',
   plantedDate: zoneData.plantedDate || '',
   runoffPh: zoneData.runoffPh || '',
@@ -98,11 +108,11 @@ const getTodayInputValue = () => {
   return `${year}-${month}-${day}`;
 };
 
-const clampRunoffValue = (value: string) => {
-  if (value === '') return '';
-  const numericValue = Number(value);
-  if (Number.isNaN(numericValue)) return '';
-  return String(Math.min(10, Math.max(0, numericValue)));
+const formatRunoffBadge = (zone: Zone) => {
+  const parts = [];
+  if (zone.runoffEc) parts.push(`${zone.runoffEc}EC`);
+  if (zone.runoffPh) parts.push(`${zone.runoffPh}pH`);
+  return parts.join('/');
 };
 
 const zoneMatchesHighlight = (zone: Zone, highlight: HighlightTarget | null) => {
@@ -173,7 +183,7 @@ export default function App() {
         if (count > 0) {
           const name = (entry.strain || 'Unnamed').trim() || 'Unnamed';
           if (entry.isMom) {
-            const cat = entry.momCategory || 'Veg';
+            const cat = entry.momCategory || 'Future Mom';
             if (!motherStats[name]) motherStats[name] = {};
             motherStats[name][cat] = (motherStats[name][cat] || 0) + count;
           } else {
@@ -211,19 +221,19 @@ export default function App() {
                     strain: String(row.strain1 || ''), 
                     count: Math.min(99, Math.max(0, parseInt(String(row.count1), 10) || 0)),
                     isMom: row.isMom1 === 'TRUE' || row.isMom1 === true,
-                    momCategory: String(row.momCategory1 || 'Veg')
+                    momCategory: normalizeMomCategory(row.momCategory1)
                   },
                   { 
                     strain: String(row.strain2 || ''), 
                     count: Math.min(99, Math.max(0, parseInt(String(row.count2), 10) || 0)),
                     isMom: row.isMom2 === 'TRUE' || row.isMom2 === true,
-                    momCategory: String(row.momCategory2 || 'Veg')
+                    momCategory: normalizeMomCategory(row.momCategory2)
                   },
                   { 
                     strain: String(row.strain3 || ''), 
                     count: Math.min(99, Math.max(0, parseInt(String(row.count3), 10) || 0)),
                     isMom: row.isMom3 === 'TRUE' || row.isMom3 === true,
-                    momCategory: String(row.momCategory3 || 'Veg')
+                    momCategory: normalizeMomCategory(row.momCategory3)
                   }
                 ],
                 notes: String(row.notes || ''),
@@ -321,7 +331,7 @@ export default function App() {
     } else if (field === 'isMom') {
       nextEntry.isMom = Boolean(value);
     } else if (field === 'momCategory') {
-      nextEntry.momCategory = String(value);
+      nextEntry.momCategory = normalizeMomCategory(String(value));
     } else {
       nextEntry.strain = String(value);
     }
@@ -337,29 +347,16 @@ export default function App() {
   };
 
   const handleRunoffNumberChange = (field: 'runoffPh' | 'runoffEc', value: string) => {
-    const nextValue = clampRunoffValue(value);
     setFormData(prev => {
       if (!prev) return prev;
       const nextFormData = {
         ...prev,
-        [field]: nextValue
+        [field]: value
       };
-      if (field === 'runoffEc' && nextValue && !prev.runoffMeasuredAt) {
+      if (field === 'runoffEc' && value && !prev.runoffMeasuredAt) {
         nextFormData.runoffMeasuredAt = getTodayInputValue();
       }
       return nextFormData;
-    });
-  };
-
-  const ensureRunoffDefaults = () => {
-    setFormData(prev => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        runoffPh: prev.runoffPh || DEFAULT_RUNOFF_PH,
-        runoffEc: prev.runoffEc || DEFAULT_RUNOFF_EC,
-        runoffMeasuredAt: prev.runoffMeasuredAt || getTodayInputValue()
-      };
     });
   };
 
@@ -400,10 +397,10 @@ export default function App() {
             {/* Detailed Total Veg Box */}
             <div className="bg-green-950/20 border border-green-800/30 p-2 rounded-lg flex flex-col min-w-0">
               <div className="flex items-baseline gap-1 mb-1">
+                <p className="text-xl font-black text-green-500 uppercase leading-none">Total Veg:</p>
                 <p className="text-xl font-black text-green-400 leading-none">{stats.totalVeg}</p>
-                <p className="text-[8px] font-bold text-green-500 uppercase tracking-tighter">- Total Veg</p>
               </div>
-              <div className="flex flex-col gap-0.5 mt-auto">
+	              <div className="flex flex-col gap-1 mt-auto">
                 {Object.keys(stats.vegCounts).length > 0 ? (
                   Object.entries(stats.vegCounts).sort(([a], [b]) => a.localeCompare(b)).map(([strain, count]) => {
                     const active = highlightTarget?.kind === 'veg' && highlightTarget.strain === strain;
@@ -414,10 +411,10 @@ export default function App() {
 	                      type="button"
 	                      aria-pressed={active}
 	                      onClick={() => handleHighlightClick({ strain, kind: 'veg' })}
-	                      className={`flex items-center w-full gap-1 px-1.5 py-0.5 rounded border max-w-full text-left transition-colors ${active ? 'bg-yellow-300 text-black border-yellow-200' : 'bg-green-900/30 border-green-500/20'}`}
+	                      className={`flex items-center w-full gap-2 px-2 py-1.5 rounded border max-w-full min-h-[30px] text-left transition-colors ${active ? 'bg-yellow-300 text-black border-yellow-200' : 'bg-green-900/30 border-green-500/20'}`}
 	                    >
-	                      <span className={`min-w-0 flex-1 text-[9px] font-bold truncate ${active ? 'text-black' : 'text-green-100'}`}>{strain}</span>
-	                      <span className={`ml-auto text-right text-[9px] font-black shrink-0 ${active ? 'text-black' : 'text-green-400'}`}>{count}</span>
+	                      <span className={`min-w-0 flex-1 text-[12px] font-bold truncate ${active ? 'text-black' : 'text-green-100'}`}>{strain}</span>
+	                      <span className={`ml-auto text-right text-[12px] font-black shrink-0 ${active ? 'text-black' : 'text-green-400'}`}>{count}</span>
 	                    </button>
                     );
                   })
@@ -429,8 +426,8 @@ export default function App() {
 
             {/* Detailed Mothers Box */}
             <div className="bg-purple-950/20 border border-purple-800/30 p-2 rounded-lg flex flex-col min-w-0">
-              <p className="text-[8px] font-bold text-purple-400 uppercase tracking-tighter mb-1.5">Mothers Detail (Veg/New/Full/Old)</p>
-              <div className="flex flex-col gap-0.5">
+		              <p className="text-xl font-black text-purple-400 uppercase leading-none mb-1.5">Mothers Detail <span className="text-[12px] font-bold">(Future/New/Full/Old Mom)</span></p>
+	              <div className="flex flex-col gap-1">
                 {Object.keys(stats.motherStats).length > 0 ? (
                   Object.entries(stats.motherStats).sort(([a], [b]) => a.localeCompare(b)).map(([strain, categories]) => {
                     const breakdown = MOM_CATEGORIES
@@ -444,10 +441,10 @@ export default function App() {
 	                        type="button"
 	                        aria-pressed={highlightTarget?.kind === 'mom' && highlightTarget.strain === strain}
 	                        onClick={() => handleHighlightClick({ strain, kind: 'mom' })}
-	                        className={`flex items-center w-full gap-1.5 px-1.5 py-0.5 rounded border max-w-full text-left transition-colors ${highlightTarget?.kind === 'mom' && highlightTarget.strain === strain ? 'bg-yellow-300 text-black border-yellow-200' : 'bg-purple-900/30 border-purple-500/20'}`}
+	                        className={`flex items-center w-full gap-2 px-2 py-1.5 rounded border max-w-full min-h-[30px] text-left transition-colors ${highlightTarget?.kind === 'mom' && highlightTarget.strain === strain ? 'bg-yellow-300 text-black border-yellow-200' : 'bg-purple-900/30 border-purple-500/20'}`}
 	                      >
-	                        <span className={`min-w-0 flex-1 text-[9px] font-bold truncate ${highlightTarget?.kind === 'mom' && highlightTarget.strain === strain ? 'text-black' : 'text-purple-100'}`}>{strain}</span>
-	                        <span className={`ml-auto text-right text-[9px] font-black shrink-0 ${highlightTarget?.kind === 'mom' && highlightTarget.strain === strain ? 'text-black' : 'text-purple-400'}`}>{breakdown}</span>
+	                        <span className={`min-w-0 flex-1 text-[12px] font-bold truncate ${highlightTarget?.kind === 'mom' && highlightTarget.strain === strain ? 'text-black' : 'text-purple-100'}`}>{strain}</span>
+	                        <span className={`ml-auto text-right text-[12px] font-black shrink-0 ${highlightTarget?.kind === 'mom' && highlightTarget.strain === strain ? 'text-black' : 'text-purple-400'}`}>{breakdown}</span>
 	                      </button>
                     );
                   })
@@ -461,11 +458,11 @@ export default function App() {
 
         {/* MAP CONTAINER - ULTRA COMPACT */}
         <div className="bg-gray-950 rounded-lg p-0.5 sm:p-4 border border-gray-900 overflow-x-auto relative">
-          <div className={`min-w-[300px] sm:min-w-[700px] flex flex-col gap-0.5 sm:gap-6 transition-opacity ${syncStatus === 'loading' ? 'opacity-30' : 'opacity-100'}`}>
-            {layoutBlocks.map((block) => (
-              <div key={block.id} className="flex flex-col gap-[1px] sm:gap-2">
-                {block.rows.map((level) => (
-                  <div key={`${block.id}-${level}`} className="grid grid-cols-7 gap-[1px] sm:gap-2">
+	          <div className={`min-w-[300px] sm:min-w-[700px] flex flex-col gap-0.5 sm:gap-4 transition-opacity ${syncStatus === 'loading' ? 'opacity-30' : 'opacity-100'}`}>
+	            {layoutBlocks.map((block) => (
+	              <div key={block.id} className="flex flex-col gap-[1px] sm:gap-1">
+	                {block.rows.map((level) => (
+	                  <div key={`${block.id}-${level}`} className="grid grid-cols-[repeat(6,minmax(0,1fr))_18px] sm:grid-cols-[repeat(6,minmax(0,1fr))_38px] gap-[1px] sm:gap-1">
                     {block.getCols(level).map((slot, index) => {
                       if (slot === null) return <div key={`empty-${level}-${index}`} className="opacity-0" />;
                       const zoneId = `${level}-${slot}`;
@@ -475,61 +472,58 @@ export default function App() {
                       const hasMoms = zone.entries.some(e => e.isMom && e.count > 0);
                       const isMixed = hasMoms && zone.entries.some(e => !e.isMom && e.count > 0);
                       const hasRunoff = Boolean(zone.runoffPh || zone.runoffEc);
+                      const runoffBadge = formatRunoffBadge(zone);
                       const isHighlighted = zoneMatchesHighlight(zone, highlightTarget);
                       
                       let bg = empty ? 'bg-gray-900 border-gray-800 text-gray-500' : 'bg-green-950 border-green-700 text-green-100';
                       if (!empty && hasMoms) bg = isMixed ? 'bg-gradient-to-br from-green-950 to-purple-950 border-purple-800' : 'bg-purple-950 border-purple-800 text-purple-100';
 
                       return (
-                        <button
-                          key={zoneId}
-                          onClick={() => handleZoneClick(zoneId)}
-                          className={`relative flex flex-col items-start p-0.5 min-h-[38px] sm:min-h-[90px] rounded-[2px] border transition-all text-left
-                            ${bg} ${isSelected ? 'ring-1 ring-white z-10 scale-[1.03]' : ''} ${isHighlighted ? 'ring-2 ring-yellow-300 border-yellow-300 shadow-[0_0_0_1px_rgba(253,224,71,0.85)] z-20' : ''}
-                          `}
-                        >
-                          <div className="flex justify-between items-start w-full leading-none">
-                            <span className="font-bold text-[9px] sm:text-xl">{slot}</span>
-                            <div className="flex items-center gap-0.5">
-                              {hasRunoff && <div className="w-1 h-1 rounded-full bg-yellow-300"></div>}
-                              {!empty && hasMoms && <div className="w-1 h-1 rounded-full bg-purple-500"></div>}
+	                        <button
+	                          key={zoneId}
+	                          onClick={() => handleZoneClick(zoneId)}
+	                          className={`relative flex flex-col items-start p-1 min-h-[52px] sm:min-h-[118px] rounded-[2px] border transition-all text-left
+	                            ${bg} ${isSelected ? 'ring-1 ring-white z-10 scale-[1.03]' : ''} ${isHighlighted ? 'ring-2 ring-yellow-300 border-yellow-300 shadow-[0_0_0_1px_rgba(253,224,71,0.85)] z-20' : ''}
+	                          `}
+	                        >
+	                          <div className="flex justify-between items-start w-full leading-none">
+	                            <span className="font-bold text-[8px] sm:text-base opacity-80">{slot}</span>
+	                            <div className="flex items-center gap-0.5">
+	                              {hasRunoff && <div className="w-1 h-1 rounded-full bg-yellow-300"></div>}
+	                              {!empty && hasMoms && <div className="w-1 h-1 rounded-full bg-purple-500"></div>}
                             </div>
                           </div>
                           
-                          <div className="mt-auto w-full space-y-[1px]">
-                            {hasRunoff && (
-                              <div className="flex justify-between items-center text-[6px] sm:text-[9px] w-full bg-yellow-300 px-0.5 rounded-[1px] overflow-hidden leading-tight text-black">
-                                <span className="truncate pr-0.5">RO</span>
-                                <span className="font-black">
-                                  {zone.runoffEc && `${zone.runoffEc}ec`}
-                                  {zone.runoffEc && zone.runoffPh && ' '}
-                                  {zone.runoffPh && `pH ${zone.runoffPh}`}
-                                </span>
-                              </div>
-                            )}
-                            {!empty ? zone.entries.map((entry, i) => (
-                              (entry.strain || entry.count > 0) && (
-                                <div key={i} className={`flex justify-between items-center text-[6px] sm:text-[10px] w-full bg-black/40 px-0.5 rounded-[1px] overflow-hidden leading-tight ${entry.isMom ? 'text-purple-300' : ''}`}>
-                                  <span className="truncate pr-0.5">
-                                    {entry.strain || 'Unk'}
-                                    {entry.isMom && (
-                                      <span className="opacity-80 ml-0.5 font-bold uppercase">
-                                        -{entry.momCategory ? entry.momCategory.charAt(0).toLowerCase() : 'v'}
+	                          <div className="mt-auto w-full space-y-[1px]">
+		                            {hasRunoff && (
+		                              <div className="flex justify-between items-center text-[8px] sm:text-[11px] w-full bg-yellow-300 px-1 py-0.5 rounded-[1px] overflow-hidden leading-tight text-black">
+		                                <span className="truncate pr-0.5">RO</span>
+		                                <span className="font-black">{runoffBadge}</span>
+		                              </div>
+		                            )}
+	                            {!empty ? zone.entries.map((entry, i) => (
+	                              (entry.strain || entry.count > 0) && (
+	                                <div key={i} className={`flex justify-between items-center text-[8px] sm:text-[12px] w-full bg-black/40 px-1 py-0.5 rounded-[1px] overflow-hidden leading-tight ${entry.isMom ? 'text-purple-300' : ''}`}>
+	                                  <span className="truncate pr-1">
+	                                    {entry.strain || 'Unk'}
+	                                    {entry.isMom && (
+	                                      <span className="opacity-80 ml-0.5 font-bold uppercase">
+                                        -{entry.momCategory ? entry.momCategory.charAt(0).toLowerCase() : 'f'}
                                       </span>
                                     )}
                                   </span>
-                                  <span className="font-black">{entry.count}</span>
-                                </div>
-                              )
-                            )) : <div className="text-[5px] opacity-20 uppercase font-bold">MT</div>}
-                          </div>
-                        </button>
+	                                  <span className="font-black">{entry.count}</span>
+	                                </div>
+	                              )
+	                            )) : <div className="text-[8px] sm:text-[11px] opacity-20 uppercase font-bold">MT</div>}
+	                          </div>
+	                        </button>
                       );
                     })}
-                    <div className="flex items-center justify-center">
-                      <div className="w-4 h-4 sm:w-10 sm:h-10 bg-gray-900 rounded-sm flex items-center justify-center font-black text-[9px] sm:text-xl text-gray-600 border border-gray-800">
-                        {level}
-                      </div>
+	                    <div className="flex items-center justify-end">
+	                      <div className="w-4 h-4 sm:w-8 sm:h-8 bg-gray-900 rounded-sm flex items-center justify-center font-black text-[9px] sm:text-lg text-gray-600 border border-gray-800">
+	                        {level}
+	                      </div>
                     </div>
                   </div>
                 ))}
@@ -572,7 +566,7 @@ export default function App() {
                           <div className="pt-1">
                             <label className="block text-[8px] font-bold text-purple-400 uppercase mb-0.5">Age / Category</label>
                             <select
-                              value={entry.momCategory || 'Veg'}
+                              value={entry.momCategory || 'Future Mom'}
                               onChange={(e) => handleEntryChange(index, 'momCategory', e.target.value)}
                               className="w-full bg-purple-900/40 border border-purple-700/50 rounded-md p-1.5 text-purple-100 text-[10px] outline-none"
                             >
@@ -595,11 +589,8 @@ export default function App() {
                           <input
                             type="number"
                             inputMode="decimal"
-                            min="0"
-                            max="10"
                             step="0.1"
-                            value={formData.runoffEc || DEFAULT_RUNOFF_EC}
-                            onFocus={ensureRunoffDefaults}
+                            value={formData.runoffEc}
                             onChange={(e) => handleRunoffNumberChange('runoffEc', e.target.value)}
                             placeholder="EC"
                             className="w-full bg-gray-900 p-1.5 rounded border border-cyan-800/60 text-xs text-cyan-100"
@@ -610,11 +601,8 @@ export default function App() {
                           <input
                             type="number"
                             inputMode="decimal"
-                            min="0"
-                            max="10"
                             step="0.1"
-                            value={formData.runoffPh || DEFAULT_RUNOFF_PH}
-                            onFocus={ensureRunoffDefaults}
+                            value={formData.runoffPh}
                             onChange={(e) => handleRunoffNumberChange('runoffPh', e.target.value)}
                             placeholder="pH"
                             className="w-full bg-gray-900 p-1.5 rounded border border-cyan-800/60 text-xs text-cyan-100"
@@ -627,11 +615,9 @@ export default function App() {
                           type="date"
                           value={toDateInputValue(formData.runoffMeasuredAt)}
                           onClick={(e) => {
-                            ensureRunoffDefaults();
                             openDatePicker(e.currentTarget);
                           }}
                           onFocus={(e) => {
-                            ensureRunoffDefaults();
                             openDatePicker(e.currentTarget);
                           }}
                           onChange={(e) => handleZoneFieldChange('runoffMeasuredAt', e.target.value)}
@@ -643,7 +629,6 @@ export default function App() {
                         <input
                           type="text"
                           value={formData.runoffNotes}
-                          onFocus={ensureRunoffDefaults}
                           onChange={(e) => handleZoneFieldChange('runoffNotes', e.target.value)}
                           placeholder="Runoff notes"
                           className="w-full bg-gray-900 p-1.5 rounded border border-cyan-800/60 text-xs text-cyan-100"
@@ -669,7 +654,7 @@ export default function App() {
                                 {e.strain || 'Empty'}
                               </p>
                               <p className="text-[9px] font-bold text-gray-500 uppercase">
-                                {e.isMom ? e.momCategory || 'Veg' : 'Plant count'}
+                                {e.isMom ? e.momCategory || 'Future Mom' : 'Plant count'}
                               </p>
                             </div>
                             <span className={`text-lg font-black ${e.isMom ? 'text-purple-300' : e.count > 0 ? 'text-green-400' : 'text-gray-600'}`}>
